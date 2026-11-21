@@ -53,3 +53,8 @@ Each settle, cancel and refund invitation has 4 commits from 1 entity.
 3. Import an invitation file, e.g. `invitations/t2.settle.json`, then `t2.open.json`.
 
 The offline `scripts/inspect.ts` check above runs the same parse-and-merge path the engine uses.
+
+## Checked in the XO debugger (blaze.xo.cash)
+The template imports into blaze.xo.cash ("Template imported: AgentTab"), and the chipnet settle `ab8f658e…3154` inspects as SUCCESS in the XO script debugger:
+
+![XO debugger: settle SUCCESS on chipnet](img/xo-inspect-settle-chipnet.jpg)
