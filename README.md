@@ -8,7 +8,7 @@ AgentTab's covenant migrated to an **XO template**, for the BCH BLAZE 2026 "Migr
 - **What was hard in XO:** [`docs/xo-findings.md`](docs/xo-findings.md). It is a fact list with versions and repros.
 
 
-**Feedback for General Protocols (written by the author):** [FEEDBACK.md](FEEDBACK.md).
+**Feedback for General Protocols (written by the author):** [feedback/](feedback/README.md).
 
 ## What AgentTab is
 

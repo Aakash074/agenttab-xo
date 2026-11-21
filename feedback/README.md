@@ -20,4 +20,4 @@ Make follow-up actions use the variables already stored on the locking script. E
 ## 6. Would I use XO for the next version?
 Yes, with a caveat. Top-ups and multi-provider tabs mean more parties and more follow-up actions, and that's where invitations really help. But I'd wait for the stored-variables fix and the one-process limit to be sorted out first. Otherwise every new action means more workaround code.
 
-Supporting facts with versions and repros: [docs/xo-findings.md](docs/xo-findings.md).
+Supporting facts with versions and repros: [docs/xo-findings.md](../docs/xo-findings.md).
