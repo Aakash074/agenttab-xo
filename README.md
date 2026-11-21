@@ -7,6 +7,9 @@ AgentTab's covenant migrated to an **XO template**, for the BCH BLAZE 2026 "Migr
 - **Chipnet proof:** [`docs/chipnet-proof.md`](docs/chipnet-proof.md). Every action (open, settle, cancel, refund) has been executed through XO invitations. The invitation files are in [`invitations/`](invitations).
 - **What was hard in XO:** [`docs/xo-findings.md`](docs/xo-findings.md). It is a fact list with versions and repros.
 
+
+**Feedback for General Protocols (written by the author):** [FEEDBACK.md](FEEDBACK.md).
+
 ## What AgentTab is
 
 AgentTab is a refundable tab for an AI agent: one on-chain transaction to open, many paid API calls, one transaction to close.
