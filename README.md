@@ -3,7 +3,7 @@
 AgentTab's covenant migrated to an **XO template**, for the BCH BLAZE 2026 "Migrate To XO" bounty by General Protocols.
 
 - **Original working project:** https://github.com/Aakash074/agenttab. It is a CashScript covenant, an x402-style paywall server, MCP tools for agents and a web app, and it is live on BCH mainnet.
-- **This XO implementation:** this repository. The template is [`src/agenttab-template.ts`](src/agenttab-template.ts), with a JSON export in [`dist/agenttab.template.json`](dist/agenttab.template.json).
+- **This XO implementation:** https://github.com/Aakash074/agenttab-xo (this repository). The template is [`src/agenttab-template.ts`](src/agenttab-template.ts), with a JSON export in [`dist/agenttab.template.json`](dist/agenttab.template.json).
 - **Chipnet proof:** [`docs/chipnet-proof.md`](docs/chipnet-proof.md). Every action (open, settle, cancel, refund) has been executed through XO invitations. The invitation files are in [`invitations/`](invitations).
 - **What was hard in XO:** [`docs/xo-findings.md`](docs/xo-findings.md). It is a fact list with versions and repros.
 
