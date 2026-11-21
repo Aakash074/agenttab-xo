@@ -102,7 +102,7 @@ export const agentTabTemplate: XOTemplate = {
             roles: {
                 provider: {
                     requirements: {
-                        variables: [ 'amountSatoshis', 'voucher' ],
+                        variables: [ 'budgetSatoshis', 'amountSatoshis', 'voucher' ],
                         secrets: [ 'providerKey' ],
                     },
                 },
@@ -123,6 +123,7 @@ export const agentTabTemplate: XOTemplate = {
             roles: {
                 provider: {
                     requirements: {
+                        variables: [ 'budgetSatoshis' ],
                         secrets: [ 'providerKey' ],
                     },
                 },
@@ -143,6 +144,7 @@ export const agentTabTemplate: XOTemplate = {
             roles: {
                 owner: {
                     requirements: {
+                        variables: [ 'budgetSatoshis' ],
                         secrets: [ 'ownerKey' ],
                     },
                 },
@@ -211,6 +213,8 @@ export const agentTabTemplate: XOTemplate = {
             inputs: [ { input: 'refundInput', inputIndex: 0 } ],
             outputs: [ { output: 'ownerRefundOutput', outputIndex: 0 } ],
 
+            // NOTE: engine 0.1.1-next.18230317763 evaluates this from the refund invitation's own variables only (not
+            // from the tab's stored state), so the owner app passes timeoutBlockHeight again in the refund invitation.
             version: 2,
             locktime: '$(<timeoutBlockHeight>)',
             composable: false,
@@ -296,7 +300,9 @@ export const agentTabTemplate: XOTemplate = {
             lockingType: 'p2sh',
             lockingBytecode: 'agentTabRedeemBytecode',
 
-            // Both sides need these to rebuild the redeem script and the payout outputs in follow-ups.
+            // Both sides need these to rebuild the redeem script in follow-ups.
+            // NOTE: engine 0.1.1-next.18230317763 uses stored state for the unlocking script, but NOT when it evaluates
+            // follow-up output values, so settle/cancel/refund also require budgetSatoshis again (read from the tab UTXO).
             state: {
                 variables: [ 'agentPublicKey', 'timeoutBlockHeight', 'budgetSatoshis' ],
             },

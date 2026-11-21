@@ -2,7 +2,7 @@
 // two XO engines cannot run in one Node process (the Electrum cache is a module-level singleton).
 // Parties exchange invitations as files in invitations/ (serializeInvitation / deserializeInvitation).
 //
-//   node --env-file=.env scripts/tab.ts owner    open-create  <name> <budgetSats> <timeoutBlocksFromNow>
+//   node --env-file=.env scripts/tab.ts owner    open-create  <name> <budgetSats> <timeoutLockBlocksFromNow>
 //   node --env-file=.env scripts/tab.ts provider open-accept  <name>
 //   node --env-file=.env scripts/tab.ts owner    open-fund    <name>
 //   node --env-file=.env scripts/tab.ts provider sync         <name>
@@ -10,6 +10,7 @@
 //   node --env-file=.env scripts/tab.ts provider settle       <name>
 //   node --env-file=.env scripts/tab.ts provider cancel       <name>
 //   node --env-file=.env scripts/tab.ts owner    refund       <name>
+//   node --env-file=.env scripts/tab.ts owner    observe      <name> settle|cancel
 //   node --env-file=.env scripts/tab.ts <owner|provider> status
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import {
@@ -62,6 +63,13 @@ await engine.setDefaultPolicies({
     receive: { templateIdentifier: walletTemplateIdentifier },
 });
 const height = (await engine.getChainStatus()).currentHeight as number;
+// Chipnet activated faster blocks (1-minute blocks) at height 332451. Height-based nLockTime and
+// OP_CHECKLOCKTIMEVERIFY stay in 10-minute units after that, so a timeout must be set in "lock height", not in the raw
+// height XO's getChainStatus() returns. lockTip = the largest height-based nLockTime that is final for the next block.
+// (Same rule as the original AgentTab repo, packages/covenant/src/index.ts lockHeightAt.)
+const FAST_BLOCKS_ACTIVATION = 332_451;
+const lockHeightAt = (h: number) => (h <= FAST_BLOCKS_ACTIVATION ? h : FAST_BLOCKS_ACTIVATION + Math.floor((h - FAST_BLOCKS_ACTIVATION) / 10));
+const lockTip = lockHeightAt(height + 1) - 1;
 
 async function missing(invitationIdentifier: string) {
     const m = await engine.listMissingRequirements(invitationIdentifier);
@@ -91,11 +99,11 @@ try {
                 intent: template.start[0],
                 variables: [
                     { variableIdentifier: 'agentPublicKey', roleIdentifier: 'owner', value: agentPublicKey() },
-                    { variableIdentifier: 'timeoutBlockHeight', roleIdentifier: 'owner', value: height + Number(blocks) },
+                    { variableIdentifier: 'timeoutBlockHeight', roleIdentifier: 'owner', value: lockTip + Number(blocks) },
                     { variableIdentifier: 'budgetSatoshis', roleIdentifier: 'owner', value: BigInt(budget) },
                 ],
             });
-            log('created', { invitationIdentifier: invitation.invitation.invitationIdentifier, height, timeout: height + Number(blocks) });
+            log('created', { invitationIdentifier: invitation.invitation.invitationIdentifier, height, lockTip, timeout: lockTip + Number(blocks) });
             await missing(invitation.invitation.invitationIdentifier);
             save('open', invitation.invitation);
             break;
@@ -152,6 +160,12 @@ try {
             const variables: any[] = [
                 { variableIdentifier: 'budgetSatoshis', roleIdentifier: who, value: BigInt(tabUtxo.valueSatoshis) },
             ];
+            if (action === 'refund') {
+                // WORKAROUND, same cause: the transaction locktime expression $(<timeoutBlockHeight>) is evaluated from
+                // the invitation's commits only, so the owner passes its stored copy of the tab state variable again.
+                const tabState: any = (await engine.listScriptHashes()).find((h: any) => h.scriptHash === tabUtxo.scriptHash);
+                variables.push({ variableIdentifier: 'timeoutBlockHeight', roleIdentifier: who, value: Number(tabState.variables.timeoutBlockHeight) });
+            }
             if (action === 'settle') {
                 const v = JSON.parse(readFileSync(`${INVITATIONS}/${name}.voucher.json`, 'utf8'));
                 variables.push(
@@ -176,6 +190,18 @@ try {
             await missing(id);
             const txid = await execute(id, action);
             notes(`${action}-result`, { txid, invitationIdentifier: id });
+            break;
+        }
+        case 'owner observe':
+        case 'provider observe': {
+            // Show this party a follow-up the other party executed, so it can track the outputs paid to it.
+            const received = load(rest[0]);
+            try { await engine.updateInvitation(received); console.log('updateInvitation ok'); }
+            catch (e: any) {
+                console.log('updateInvitation failed:', e.name, e.message);
+                await engine.acceptInvitation(received); console.log('acceptInvitation ok');
+            }
+            log('utxos', (await engine.listUnspentOutputs()).map((u: any) => ({ tx: u.outpointTransactionHash, vout: u.outpointIndex, sats: u.valueSatoshis, template: u.templateIdentifier === templateIdentifier ? 'agenttab' : 'wallet' })));
             break;
         }
         case 'owner release':
