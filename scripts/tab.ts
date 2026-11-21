@@ -169,7 +169,8 @@ try {
             if (action === 'settle') {
                 const v = JSON.parse(readFileSync(`${INVITATIONS}/${name}.voucher.json`, 'utf8'));
                 variables.push(
-                    { variableIdentifier: 'amountSatoshis', roleIdentifier: 'provider', value: BigInt(v.amount) },
+                    // CHEAT_AMOUNT lets the attack demo claim more than the voucher signs; the covenant must reject it.
+                    { variableIdentifier: 'amountSatoshis', roleIdentifier: 'provider', value: BigInt(process.env.CHEAT_AMOUNT ?? v.amount) },
                     { variableIdentifier: 'voucher', roleIdentifier: 'provider', value: v.voucher },
                 );
             }
