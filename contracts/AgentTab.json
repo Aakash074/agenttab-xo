@@ -1,0 +1,71 @@
+{
+  "contractName": "AgentTab",
+  "constructorInputs": [
+    { "name": "owner", "type": "pubkey" },
+    { "name": "agent", "type": "pubkey" },
+    { "name": "provider", "type": "pubkey" },
+    { "name": "timeout", "type": "int" }
+  ],
+  "abi": [
+    {
+      "name": "settle",
+      "inputs": [
+        { "name": "providerSig", "type": "sig" },
+        { "name": "voucher", "type": "datasig" },
+        { "name": "amountBytes", "type": "bytes8" }
+      ]
+    },
+    {
+      "name": "cancel",
+      "inputs": [
+        { "name": "providerSig", "type": "sig" }
+      ]
+    },
+    {
+      "name": "refund",
+      "inputs": [
+        { "name": "ownerSig", "type": "sig" }
+      ]
+    }
+  ],
+  "bytecode": "OP_4 OP_PICK OP_0 OP_NUMEQUAL OP_IF OP_7 OP_ROLL OP_SIZE OP_8 OP_EQUALVERIFY OP_TXINPUTCOUNT OP_1 OP_NUMEQUALVERIFY OP_TXOUTPUTCOUNT OP_2 OP_NUMEQUALVERIFY OP_6 OP_ROLL OP_4 OP_PICK OP_CHECKSIGVERIFY OP_0 OP_OUTPOINTTXHASH OP_0 OP_OUTPOINTINDEX OP_4 OP_NUM2BIN OP_CAT OP_7 OP_ROLL 4147454e54544142 OP_ROT OP_CAT OP_2 OP_PICK OP_CAT OP_4 OP_ROLL OP_CHECKDATASIGVERIFY OP_BIN2NUM OP_0 OP_UTXOVALUE OP_OVER OP_SUB OP_OVER 2202 OP_GREATERTHANOREQUAL OP_VERIFY OP_DUP 2202 OP_GREATERTHANOREQUAL OP_VERIFY OP_0 OP_OUTPUTBYTECODE 76a914 OP_5 OP_ROLL OP_HASH160 OP_CAT 88ac OP_CAT OP_EQUALVERIFY OP_0 OP_OUTPUTVALUE OP_ROT OP_LESSTHANOREQUAL OP_VERIFY OP_0 OP_OUTPUTTOKENCATEGORY OP_0 OP_EQUALVERIFY OP_1 OP_OUTPUTBYTECODE 76a914 OP_3 OP_ROLL OP_HASH160 OP_CAT 88ac OP_CAT OP_EQUALVERIFY OP_1 OP_OUTPUTVALUE OP_NUMEQUALVERIFY OP_1 OP_OUTPUTTOKENCATEGORY OP_0 OP_EQUAL OP_NIP OP_NIP OP_ELSE OP_4 OP_PICK OP_1 OP_NUMEQUAL OP_IF OP_TXINPUTCOUNT OP_1 OP_NUMEQUALVERIFY OP_TXOUTPUTCOUNT OP_1 OP_NUMEQUALVERIFY OP_5 OP_ROLL OP_3 OP_ROLL OP_CHECKSIGVERIFY OP_0 OP_OUTPUTBYTECODE 76a914 OP_ROT OP_HASH160 OP_CAT 88ac OP_CAT OP_EQUALVERIFY OP_0 OP_OUTPUTVALUE OP_0 OP_UTXOVALUE e803 OP_SUB OP_GREATERTHANOREQUAL OP_VERIFY OP_0 OP_OUTPUTTOKENCATEGORY OP_0 OP_EQUAL OP_NIP OP_NIP OP_NIP OP_ELSE OP_4 OP_ROLL OP_2 OP_NUMEQUALVERIFY OP_4 OP_ROLL OP_SWAP OP_CHECKSIGVERIFY OP_ROT OP_CHECKLOCKTIMEVERIFY OP_2DROP OP_DROP OP_1 OP_ENDIF OP_ENDIF",
+  "source": "pragma cashscript ^0.14.0;\n\n// AgentTab: a refundable, unidirectional payment channel (\"tab\") for an AI agent.\n//\n//  - The \"owner\" (a human wallet, or the agent itself) locks a budget in ONE utxo at this contract.\n//  - The \"agent\" key can only sign spending vouchers; it can never withdraw. For every paid API\n//    call it signs an off-chain voucher for the CUMULATIVE amount owed:\n//        voucher = datasig(agent, \"AGENTTAB\" ++ outpointTxHash ++ outpointIndex(4) ++ amount(8))\n//    The voucher is bound to the exact funding outpoint, so it can never be replayed against\n//    another tab (or a second utxo accidentally sent to the same address).\n//  - The provider can settle at any time with the highest voucher it holds:\n//        output 0 -> provider, at most `amount` (provider pays the miner fee out of its own share)\n//        output 1 -> owner, EXACTLY budget - amount (the remainder is forced back)\n//  - The provider can instead `cancel`: the whole budget (minus a fee of at most 1000 sats) returns to the owner.\n//  - After `timeout` (absolute nLockTime: block height < 500M, or unix time >= 500M) the owner\n//    can reclaim everything. The provider must settle before the timeout.\ncontract AgentTab(pubkey owner, pubkey agent, pubkey provider, int timeout) {\n    function settle(sig providerSig, datasig voucher, bytes8 amountBytes) {\n        // Exactly one input (the tab utxo) and exactly two outputs: no bundling of several\n        // tab utxos into one tx, no extra outputs siphoning value.\n        require(tx.inputs.length == 1);\n        require(tx.outputs.length == 2);\n\n        require(checkSig(providerSig, provider));\n\n        // Voucher must be signed by the agent over this exact funding outpoint and amount.\n        bytes outpoint = tx.inputs[0].outpointTransactionHash + toPaddedBytes(tx.inputs[0].outpointIndex, 4);\n        require(checkDataSig(voucher, 0x4147454e54544142 + outpoint + amountBytes, agent));\n\n        int amount = int(amountBytes);\n        int budget = tx.inputs[0].value;\n        int remainder = budget - amount;\n        require(amount >= 546);\n        require(remainder >= 546);\n\n        // Provider gets at most the signed amount (and pays the fee from it).\n        require(tx.outputs[0].lockingBytecode == new LockingBytecodeP2PKH(hash160(provider)));\n        require(tx.outputs[0].value <= amount);\n        require(tx.outputs[0].tokenCategory == 0x);\n\n        // Owner gets exactly the remainder.\n        require(tx.outputs[1].lockingBytecode == new LockingBytecodeP2PKH(hash160(owner)));\n        require(tx.outputs[1].value == remainder);\n        require(tx.outputs[1].tokenCategory == 0x);\n    }\n\n    // Provider waives the tab: everything goes back to the owner right away (minus a capped miner fee).\n    // Used when there is too little owed to be worth settling, or as a goodwill early close.\n    function cancel(sig providerSig) {\n        require(tx.inputs.length == 1);\n        require(tx.outputs.length == 1);\n        require(checkSig(providerSig, provider));\n        require(tx.outputs[0].lockingBytecode == new LockingBytecodeP2PKH(hash160(owner)));\n        require(tx.outputs[0].value >= tx.inputs[0].value - 1000);\n        require(tx.outputs[0].tokenCategory == 0x);\n    }\n\n    function refund(sig ownerSig) {\n        require(checkSig(ownerSig, owner));\n        require(tx.time >= timeout);\n    }\n}\n",
+  "fingerprint": "fd6bb3e627e458e79fc9f8659dbe9ea9713c0c7ef71efb1ad5a21b5b98535c1c",
+  "debug": {
+    "bytecode": "5479009c63577a825888c3519dc4529d567a5479ad00c800c954807e577a084147454e545441427b7e52797e547abb8100c6789478022202a26976022202a26900cd0376a914557aa97e0288ac7e8800cc7ba16900d1008851cd0376a914537aa97e0288ac7e8851cc9d51d100877777675479519c63c3519dc4519d557a537aad00cd0376a9147ba97e0288ac7e8800cc00c602e80394a26900d1008777777767547a529d547a7cad7bb16d75516868",
+    "sourceMap": "18:4:45:5;;;;;:54:18:72;;;;;21:16:21:32;:36::37;:8::39:1;22:16:22:33:0;:37::38;:8::40:1;24:25:24:36:0;;:38::46;;:8::49:1;27:35:27:36:0;:25::61:1;:88::89:0;:78::104:1;:106::107:0;:64::108:1;:25;28:29:28:36:0;;:38::56;:59::67;:38:::1;:70::81:0;;:38:::1;:83::88:0;;:8::91:1;30:21:30:37;31:31:31:32:0;:21::39:1;32:33:32::0;:24:::1;33:16:33:22:0;:26::29;:16:::1;:8::31;34:16:34:25:0;:29::32;:16:::1;:8::34;37:27:37:28:0;:16::45:1;:49::92:0;:82::90;;:74::91:1;:49::92;;;:8::94;38:27:38:28:0;:16::35:1;:39::45:0;:16:::1;:8::47;39:27:39:28:0;:16::43:1;:47::49:0;:8::51:1;42:27:42:28:0;:16::45:1;:49::89:0;:82::87;;:74::88:1;:49::89;;;:8::91;43:27:43:28:0;:16::35:1;:8::50;44:27:44:28:0;:16::43:1;:47::49:0;:8::51:1;18:74:45:5;;:4;49::56::0;;;;;50:16:50:32;:36::37;:8::39:1;51:16:51:33:0;:37::38;:8::40:1;52:25:52:36:0;;:38::46;;:8::49:1;53:27:53:28:0;:16::45:1;:49::89:0;:82::87;:74::88:1;:49::89;;;:8::91;54:27:54:28:0;:16::35:1;:49::50:0;:39::57:1;:60::64:0;:39:::1;:16;:8::66;55:27:55:28:0;:16::43:1;:47::49:0;:8::51:1;49:37:56:5;;;:4;58::61::0;;;;59:25:59:33;;:35::40;:8::43:1;60:27:60:34:0;:8::36:1;58:34:61:5;;;17:0:62:1;",
+    "logs": [],
+    "requires": [
+      { "ip": 16, "line": 21 },
+      { "ip": 19, "line": 22 },
+      { "ip": 24, "line": 24 },
+      { "ip": 42, "line": 28 },
+      { "ip": 51, "line": 33 },
+      { "ip": 55, "line": 34 },
+      { "ip": 65, "line": 37 },
+      { "ip": 70, "line": 38 },
+      { "ip": 74, "line": 39 },
+      { "ip": 84, "line": 42 },
+      { "ip": 87, "line": 43 },
+      { "ip": 92, "line": 44 },
+      { "ip": 102, "line": 50 },
+      { "ip": 105, "line": 51 },
+      { "ip": 110, "line": 52 },
+      { "ip": 119, "line": 53 },
+      { "ip": 127, "line": 54 },
+      { "ip": 132, "line": 55 },
+      { "ip": 143, "line": 59 },
+      { "ip": 145, "line": 60 }
+    ],
+    "sourceTags": "5:9:pv;88:89:sc;128:130:sc"
+  },
+  "compiler": {
+    "name": "cashc",
+    "version": "0.14.0",
+    "options": {
+      "enforceFunctionParameterTypes": true,
+      "enforceLocktimeGuard": true
+    }
+  },
+  "updatedAt": "2026-11-21T10:19:47.386Z"
+}
